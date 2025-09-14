@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Debug Test</title>
+</head>
+<body>
+    <h1>Debug Test Page</h1>
+    
+    <button onclick="testServer()">Test Server</button>
+    <button onclick="testUpload()">Test Upload</button>
+    
+    <div id="output" style="margin-top: 20px; padding: 10px; background: #f0f0f0; font-family: monospace; white-space: pre-wrap;"></div>
+    
+    <form id="uploadForm" style="margin-top: 20px;">
+        <input type="file" id="file" accept=".txt" required>
+        <button type="submit">Upload Test File</button>
+    </form>
+
+    <script>
+        const output = document.getElementById('output');
+        
+        function log(message) {
+            output.textContent += new Date().toLocaleTimeString() + ': ' + message + '\n';
+        }
+        
+        async function testServer() {
+            log('Testing server...');
+            try {
+                const response = await fetch('/test');
+                const data = await response.json();
+                log('Server test result: ' + JSON.stringify(data));
+            } catch (error) {
+                log('Server test error: ' + error.message);
+            }
+        }
+        
+        async function testUpload() {
+            log('Testing upload with dummy file...');
+            
+            const formData = new FormData();
+            const blob = new Blob(['This is a test file content for debugging.'], {type: 'text/plain'});
+            formData.append('file', blob, 'test.txt');
+            
+            try {
+                const response = await fetch('/upload', {
+                    method: 'POST',
+                    body: formData
+                });
+                const data = await response.json();
+                log('Upload test result: ' + JSON.stringify(data, null, 2));
+            } catch (error) {
+                log('Upload test error: ' + error.message);
+            }
+        }
+        
+        document.getElementById('uploadForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            const fileInput = document.getElementById('file');
+            if (!fileInput.files[0]) {
+                log('No file selected');
+                return;
+            }
+            
+            log('Testing upload with selected file: ' + fileInput.files[0].name);
+            
+            const formData = new FormData();
+            formData.append('file', fileInput.files[0]);
+            
+            try {
+                const response = await fetch('/upload', {
+                    method: 'POST',
+                    body: formData
+                });
+                const data = await response.json();
+                log('File upload result: ' + JSON.stringify(data, null, 2));
+            } catch (error) {
+                log('File upload error: ' + error.message);
+            }
+        });
+    </script>
+</body>
+</html>

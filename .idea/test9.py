@@ -12,6 +12,7 @@ from dotenv import load_dotenv
 import json
 import re
 import itertools
+import ray
 from typing import List, Dict, Tuple, Callable, Optional
 Adj = Dict[str, Dict[str, int]]
 
@@ -658,31 +659,193 @@ def plot_graph(
 
     return G
 
+def chunk_text_sliding_by_sentences(
+    text: str,
+    target_chars: int = 5000,
+    hard_max_chars: int = 8000,
+    overlap_sentences: int = 2,
+    max_chunks: int = 5,
+) -> List[str]:
+    """
+    Build up to `max_chunks` overlapping chunks. Each chunk is ~target_chars
+    (capped by hard_max_chars). Next chunk starts `overlap_sentences` before
+    the previous chunk ends.
+    """
+    sents = [s for s in re.split(r'(?<=[.!?])\s+', text.strip()) if s.strip()]
+    chunks = []
+    i = 0
+    while i < len(sents) and len(chunks) < max_chunks:
+        buf, cur_len, j = [], 0, i
+        while j < len(sents):
+            s_len = len(sents[j]) + 1
+            # stop at target or hard cap (but ensure we don't emit an empty chunk)
+            if (cur_len + s_len > target_chars and buf) or (cur_len + s_len > hard_max_chars):
+                break
+            buf.append(sents[j])
+            cur_len += s_len
+            j += 1
+        if buf:
+            chunks.append(" ".join(buf))
+        if j >= len(sents) or len(chunks) >= max_chunks:
+            break
+        # slide with overlap
+        i = max(i + 1, j - overlap_sentences)
+    return chunks
+
+@ray.remote
+def process_chunk_remote(
+    chunk_text: str,
+    *,
+    window: int = 4,
+    keep_fraction: float = 0.33,
+    topk_edges_per_node: int = 3,
+    layout_seed: int = 7,
+    dedup_per_chunk: bool = True  # <-- default True here
+) -> Dict:
+    try:
+        setup_environment()
+    except Exception:
+        pass
+
+    try:
+        _G, phrases = extract_key_phrases(
+            chunk_text,
+            plot=False,
+            window=window,
+            keep_fraction=keep_fraction,
+            topk_edges_per_node=topk_edges_per_node,
+            layout_seed=layout_seed
+        )
+    except Exception as e:
+        return {"phrases": [], "keyword_map": {}, "err": f"extract_failed: {e}"}
+
+    phrases = sorted(set(phrases))
+    if not dedup_per_chunk:
+        # not used in this config, but keep for completeness
+        return {"phrases": phrases, "keyword_map": {}, "err": None}
+
+    try:
+        dedup_json = deduplicate_keywords_with_claude(phrases)
+        kw_map = json_to_dict(dedup_json)
+        return {"phrases": [], "keyword_map": kw_map, "err": None}
+    except Exception as e:
+        return {"phrases": phrases, "keyword_map": {}, "err": f"chunk_dedup_failed: {e}"}
+
+def _merge_keyword_maps(maps: List[Dict[str, List[str]]]) -> Dict[str, List[str]]:
+    merged: Dict[str, set] = {}
+    for m in maps:
+        for canon, variants in m.items():
+            merged.setdefault(canon, set()).update(variants)
+    return {k: sorted(v) for k, v in merged.items()}
+
+def run_parallel_pipeline(
+    text: str,
+    *,
+    target_chars: int = 5000,
+    hard_max_chars: int = 8000,
+    overlap_sentences: int = 2,
+    max_chunks: int = 5,               # <-- cap at 5 to respect Claude limit
+    num_cpus: Optional[int] = None,
+    window: int = 4,
+    keep_fraction: float = 0.33,
+    final_global_dedup: bool = False,  # <-- keep OFF to stay within 5 calls/min
+):
+    """
+    1) make ≤ max_chunks overlapping chunks
+    2) parallel Ray map: per-chunk TextRank + Claude dedup
+    3) merge per-chunk canonical maps
+    4) (optional) one final global dedup call
+    5) build co-occurrence graph on full text
+    """
+    # --- chunk (≤ max_chunks)
+    chunks = chunk_text_sliding_by_sentences(
+        text,
+        target_chars=target_chars,
+        hard_max_chars=hard_max_chars,
+        overlap_sentences=overlap_sentences,
+        max_chunks=max_chunks,
+    )
+    if not chunks:
+        return {}, {}
+
+    # --- init Ray
+    if not ray.is_initialized():
+        ray.init(ignore_reinit_error=True, num_cpus=num_cpus or os.cpu_count())
+
+    # --- map: submit one task per chunk (runs concurrently)
+    futures = [
+        process_chunk_remote.options(name=f"process_chunk[{i}]").remote(
+            c,
+            window=window,
+            keep_fraction=keep_fraction,
+            dedup_per_chunk=True,   # per your requirement
+        )
+        for i, c in enumerate(chunks)
+    ]
+
+    results = ray.get(futures)
+
+    # --- collect errors (non-fatal)
+    errs = [r["err"] for r in results if r.get("err")]
+    if errs:
+        print("[ray] Non-fatal worker errors:")
+        for e in errs[:10]:
+            print("  -", e)
+        if len(errs) > 10:
+            print(f"  ... +{len(errs)-10} more")
+
+    # --- merge per-chunk maps
+    partial_map = _merge_keyword_maps([r["keyword_map"] for r in results])
+
+    # --- (optional) single global dedup across chunks
+    if final_global_dedup:
+        seed_terms = sorted(
+            set(partial_map.keys())
+            | set(itertools.chain.from_iterable(partial_map.values()))
+        )
+        print(f"[ray] Final global dedup over {len(seed_terms)} terms...")
+        dedup_json = deduplicate_keywords_with_claude(seed_terms)
+        keyword_map = json_to_dict(dedup_json)
+    else:
+        keyword_map = partial_map
+
+    # --- build edges over full text using final canonical nodes
+    nodes = list(keyword_map.keys())
+    adj = createEdges(text, nodes)
+
+    return keyword_map, adj
+
 def main():
     load_dotenv()
     setup_environment()
-    with open("articles/sorting_algorithms.txt", 'r') as file:
-        text = file.read() 
-        G, phrases = extract_key_phrases(text, plot=True)
-        # print(phrases)
-        dedup_phrases = deduplicate_keywords_with_claude(phrases)
-        print(dedup_phrases)
-        keyword_map = json_to_dict(dedup_phrases)
-        # print(keyword_map)
-        # new_G = consolidate_graph(G, keyword_map)
-        adj = (createEdges(text, keyword_map.keys()))
 
-        plot_graph(
-            adj,
-            top_k_out=None,
-            min_weight=1,
-            layout="spring",
-            title="Co-occurrence Graph (full)",
-            save_path=None,
-            show_weights=False,
-        )
+    with open("articles/sorting_algorithms.txt", "r") as f:
+        text = f.read()
 
+    keyword_map, adj = run_parallel_pipeline(
+        text,
+        target_chars=6000,
+        hard_max_chars=9000,
+        overlap_sentences=2,   # a little overlap helps boundary concepts
+        max_chunks=5,          # <= 5 Claude calls
+        num_cpus=None,
+        window=4,
+        keep_fraction=0.33,
+        final_global_dedup=False,   # keep within 5 calls/min
+    )
+
+    print(json.dumps(keyword_map, indent=2)[:2000])
+
+    print("PLOTTING GRAPH\n")
+    plot_graph(
+        adj,
+        top_k_out=None,
+        min_weight=1,
+        layout="spring",
+        title="Co-occurrence Graph (parallel per-chunk dedup, ≤5 tasks)",
+        save_path=None,
+        show_weights=False,
+    )
 
 if __name__ == "__main__":
     main()
-

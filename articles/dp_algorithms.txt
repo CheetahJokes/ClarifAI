@@ -1,0 +1,31 @@
+1. What is a graph?
+A graph is just a way of representing relationships.
+A graph is made of nodes (also called vertices) and edges (connections between nodes).
+Example: Think of cities as nodes and roads between them as edges.
+2. Types of graphs
+Undirected graph: edges don’t have a direction (like a road that goes both ways).
+Directed graph (digraph): edges have a direction (like one-way streets).
+Weighted graph: edges have numbers (weights), maybe representing distance, cost, or time.
+Unweighted graph: edges are all equal.
+Simple graph: no multiple edges between the same two nodes, and no node connects to itself.
+Multigraph: allows multiple edges between the same nodes.
+3. Key terms
+Degree: how many edges connect to a node (in directed graphs, you have in-degree and out-degree).
+Path: a sequence of nodes connected by edges.
+Cycle: a path that starts and ends at the same node.
+Connected graph: in an undirected graph, if you can reach any node from any other.
+Strongly connected: in a directed graph, if you can go both ways between any two nodes.
+Tree: a connected graph with no cycles.
+4. Common graph problems
+Shortest path: what is the minimum distance between two nodes? (Algorithms: Dijkstra, Bellman-Ford)
+Traversal: visiting nodes in some order (Depth-First Search, Breadth-First Search).
+Minimum spanning tree: connecting all nodes with the minimum total edge weight (Kruskal, Prim).
+Network flow: how much “stuff” can move through a network from source to sink (Ford–Fulkerson, Edmonds–Karp).
+Graph coloring: assigning “colors” to nodes so no two connected nodes share the same color (used in scheduling).
+5. Why graphs are important
+Graphs model real-world systems:
+Internet (computers connected by links)
+Social networks (people connected by friendships)
+Maps (cities connected by roads)
+Biology (proteins interacting)
+Project management (tasks and dependencies)

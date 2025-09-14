@@ -3,6 +3,7 @@ import io
 import itertools
 import networkx as nx
 import nltk
+import matplotlib.pyplot as plt
 import os
 
 
@@ -93,7 +94,7 @@ def extract_key_phrases(text):
 
     # the number of keyphrases returned will be relative to the size of the
     # text (a third of the number of vertices)
-    one_third = len(word_set_list) // 3
+    one_third = len(word_set_list) // 10
     keyphrases = keyphrases[0:one_third + 1]
 
     # take keyphrases with multiple words into consideration as done in the
@@ -116,6 +117,48 @@ def extract_key_phrases(text):
                 modified_key_phrases.add(phrase)
         else:
             i += 1
+
+    H = graph.subgraph(keyphrases).copy()
+
+    # --- NEW: keep only top-3 connections per node by edge weight ---
+    edges_to_keep = set()
+    for u in H.nodes():
+        nbrs = []
+        # H[u] is adjacency dict: {v: data}
+        for v, data in H[u].items():
+            w = data.get("weight", 1.0)
+            nbrs.append((w, v))
+        # sort by descending weight, then by neighbor name for determinism
+        nbrs.sort(key=lambda x: (-x[0], str(x[1])))
+        for _, v in nbrs[:3]:
+            a, b = (u, v) if u <= v else (v, u)
+            edges_to_keep.add((a, b))
+
+    # build pruned graph
+    H2 = nx.Graph()
+    H2.add_nodes_from(H.nodes())
+    H2.add_edges_from(
+        (u, v, H.get_edge_data(u, v) or {"weight": 1.0})
+        for (u, v) in edges_to_keep
+        if H.has_edge(u, v)
+    )
+
+    # drop isolates after pruning
+    H2.remove_nodes_from(list(nx.isolates(H2)))
+
+    if H2.number_of_nodes() > 0:
+        node_sizes = [max(300.0, 5000.0 * calculated_page_rank.get(n, 0.0)) for n in H2.nodes()]
+        pos = nx.spring_layout(H2, seed=7, weight="weight")
+
+        plt.figure(figsize=(9, 7))
+        nx.draw_networkx_nodes(H2, pos, node_size=node_sizes, alpha=0.9)
+        nx.draw_networkx_edges(H2, pos, alpha=0.6)
+        nx.draw_networkx_labels(H2, pos, font_size=10)
+
+        plt.title("Most Important Keyphrase Graph (Top-3 connections per node)")
+        plt.axis("off")
+        plt.tight_layout()
+        plt.show()
 
     return modified_key_phrases
 

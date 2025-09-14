@@ -1,219 +1,57 @@
-advanced comparison
-calculate
-remainder
-recursive algorithm
-decrement
-imbalance
-multiple
-internal
-Recursion
-⏟⏞⏞⏞⏞⏞⏞⏞⏞⏞⏟⏞⏞⏞⏞⏞⏞⏞⏞⏞⏟
-expensive
-Mergesort Mergesort
-scenario
-following
-illustration
-quicksort
-beginning
-rigorous
-worst-case
-arithmetic
-idx_comp
-swap_made variable
-complexity
-second-to-last
-sequence
-introspective
-intuition
-sampling
-comparator
-Furthermore
-second-least significant
-additional
-mergesort
-different
-second-largest
-following recurrence
-swap_made
-improved
-familiar
-stability
-efficient
-comparison
-imbalanced partition possible
-permutation
-equality
-Selection
-underlined
-Representation
-comparison-based
-current++
-Eggplant
-average-case behavior
-coefficient
-independent
-Implementations
-recursive quicksort
-following container
-difficult
-recurrence
-Adaptive
-complexity standpoint
-selection
-specific approach
 advantageous
-calculate cumulative
-Algorithms
-Randomly
-divide-and-conquer
-high-performance
-selection_sort
-applicable
-distinct
-execution
-fixed-size
-in-place variation
-Increment
-parallel
-advanced
-heapified
-following comparator
-additional container
-non-stable
-partitioning
-Quicksort
-bottom-up mergesort
-predefined
-collection
-Analysis
-significant
-underlying
-variation
-shifting
-auxiliary
-insertion
-best-case scenario
-variable
-duplicate
-computer
-worst-case scenario
-insertion_sort
-analysis
-reference
-Advanced
-terminology
-embodiment
-initialize
-everything
-container
-static_cast
-intuitive description
-fix_down
-bottom-up
-best-case
-certainty
-in-place
-initializer
-counting_sort
-reasonable
-traversal
-constructor
-reasoning
-different algorithms
-average-case
-Decrement
-quicksort partition
-guarantee
-additional optimization
-min_index
-Comparison
-likelihood
-building
-intuitive explanation
-linear-time
-simplicity
-addition
 tail-recursive
 Non-adaptive
-RandomAccessIterator
-external
-introsort
-arbitrary
-recursion
-possible
-straightforward
-typename
-uint32_t
-non-adaptive
-completion
-uncommon
-least-significant
-alternative
-redeeming
-measurement
-:stable_sort
-External
-worst-case performance
-top-down implementation
-possible partition
-significance
-identical
-bubble_sort
-approach
-leftmost
-behavior
-divide-and-conquer algorithm
-mergesort algorithm
-algorithm
-unstable implementation
-1-indexing
-difference
-Introsort
-following modification
-⏟⏞⏞⏞⏞⏞⏞⏞⏞⏞⏞⏞⏞⏞⏞⏞⏞⏞⏞⏟⏞⏞⏞⏞⏞⏞⏞⏞⏞⏞⏞⏞⏞⏞⏞⏞⏞⏞⏟
-elementary
-max-heap
-algorithms
-Elementary
-different best-case
-different complexity
-smallest
-structure
-asymptotic
-recursive
-specific
-Auxiliary
-original
-log10∕9
-implementation
-standard
-subproblem
-explanation
-substitution
-subarray
-adjacent
-Insertion
-in_place_counting_sort
-important
-:nth_element
-iteration
-efficiency
-operation
-downright
-performance
-quicksort algorithm
-arbitrary container
-optional comparator
-Quicksort Quicksort
-unfinished
-Performance
-advantage
-original container
-individual
-non-pivot
-inversion
-initialize comparator
-increment
-Mergesort
+insertion_sort
 IndexSortComparator
-partition
+implementation
+Performance
+terminology
+alternative
+:nth_element
+static_cast
+significance
+explanation
+bubble_sort
+likelihood
+measurement
+second-largest
+description
+comparison-based
+:stable_sort
+modification
+permutation
+significant
+Implementations
+divide-and-conquer
+partitioning
+fixed-size
+1-indexing
+initializer
+counting_sort
+unfinished
+substitution
+in_place_counting_sort
+individual
+asymptotic
+subproblem
+Representation
+RandomAccessIterator
+optimization
+independent
+average-case
+Algorithms
+linear-time
+second-least significant
+high-performance
+coefficient
+straightforward
+Furthermore
+least-significant
+introspective
+constructor
+illustration
+performance
+second-to-last
+efficiency
+selection_sort
+non-adaptive

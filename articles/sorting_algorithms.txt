@@ -583,9 +583,9 @@ What is the input size of these recursive calls? This actually depends on the va
 elements to the left and right of the pivot would be equal, and the input size would be ∕2. For example, there are an equal number of elements
 to the left and right of the median value, 5:
 1 2 3 4 5 6 7 8 9
-⏟⏞⏞⏞⏞⏞⏞⏞⏞⏞⏟⏞⏞⏞⏞⏞⏞⏞⏞⏞⏟
+
 ∕2
-⏟⏞⏞⏞⏞⏞⏞⏞⏞⏞⏟⏞⏞⏞⏞⏞⏞⏞⏞⏞⏟
+
 ∕2
 In this case, both recursive calls (on lines 6 and 7) would be called on an input size of ∕2. If the median were chosen as the pivot every time,
 the recurrence relation for quicksort would be
@@ -600,7 +600,7 @@ In the worst case, either the smallest or largest element is chosen as the pivot
 empty and the other side with all the remaining elements. For instance, if 1 were chosen as the pivot, every other element would be partitioned
 to the right of the pivot:
 1 2 3 4 5 6 7 8 9
-⏟⏞⏞⏞⏞⏞⏞⏞⏞⏞⏞⏞⏞⏞⏞⏞⏞⏞⏞⏞⏞⏞⏞⏞⏞⏞⏞⏟⏞⏞⏞⏞⏞⏞⏞⏞⏞⏞⏞⏞⏞⏞⏞⏞⏞⏞⏞⏞⏞⏞⏞⏞⏞⏞⏟
+
 −1
 When this happens, one of the recursive calls would have an input size of 0, and the other would have an input size of − 1. If either the smallest
 or largest element is chosen as the pivot every time, the recurrence relation for quicksort becomes
@@ -617,18 +617,18 @@ pivot, then there is a 50% chance the pivot ends up in the "middle half" of the 
 the elements whose values are closest to the median value, and not the elements that are physically located in the middle of the initial array,
 which may be unsorted.
 1 2 3 4 5 6 7 8
-⏟⏞⏞⏞⏞⏞⏞⏞⏞⏞⏟⏞⏞⏞⏞⏞⏞⏞⏞⏞⏟
+
 50% chance pivot ends up here
 If the pivot does land in this range, the worst possible partition that could happen is a 3-to-1 split, as shown below.
 1 2 3 4 5 6 7 8
-⏟⏞⏟⏞⏟
+
 ∕4
-⏟⏞⏞⏞⏞⏞⏞⏞⏞⏞⏞⏞⏞⏞⏞⏞⏞⏞⏞⏟⏞⏞⏞⏞⏞⏞⏞⏞⏞⏞⏞⏞⏞⏞⏞⏞⏞⏞⏟
+
 3∕4
 1 2 3 4 5 6 7 8
-⏟⏞⏞⏞⏞⏞⏞⏞⏞⏞⏞⏞⏞⏞⏞⏞⏞⏞⏞⏟⏞⏞⏞⏞⏞⏞⏞⏞⏞⏞⏞⏞⏞⏞⏞⏞⏞⏞⏟
+
 3∕4
-⏟⏞⏟⏞⏟
+
 ∕4
 Thus, in the average-case, the recurrence relation for half of the quicksort calls is at worst
  () = {
@@ -921,9 +921,9 @@ Consider the merge() function on the following unsorted array: [5, 6, 3, 1, 8, 2
 recursively mergesort the two halves of the array, [5, 6, 3, 1] and [8, 2, 4, 7] (as shown on lines 9 and 10 of the above code). This sorts
 the two halves of the array. After this step, the contents of the array are as follows:
 1 3 5 6 2 4 7 8
-⏟⏞⏞⏞⏞⏞⏞⏞⏞⏞⏟⏞⏞⏞⏞⏞⏞⏞⏞⏞⏟
+
 sorted
-⏟⏞⏞⏞⏞⏞⏞⏞⏞⏞⏟⏞⏞⏞⏞⏞⏞⏞⏞⏞⏟
+
 sorted
 328 Chapter 14. Sorting Algorithms
 To merge the two sorted halves, we will first initialize an empty vector to store the sorted output and initialize indices i and j to refer to the first

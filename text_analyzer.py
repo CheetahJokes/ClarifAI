@@ -737,6 +737,78 @@ class TextAnalyzer:
                 merged.setdefault(canon, set()).update(variants)
         return {k: sorted(v) for k, v in merged.items()}
 
+    def _run_sequential_pipeline(
+        self, 
+        chunks: List[str], 
+        *, 
+        window: int = 4, 
+        keep_fraction: float = 0.33, 
+        final_global_dedup: bool = False
+    ):
+        """
+        Fallback sequential processing when Ray fails or times out.
+        """
+        print("Running sequential processing fallback...")
+        
+        all_phrases = []
+        partial_maps = []
+        
+        for i, chunk in enumerate(chunks):
+            print(f"Processing chunk {i+1}/{len(chunks)} sequentially...")
+            
+            try:
+                # Extract key phrases from chunk
+                _G, phrases = self.extract_key_phrases(
+                    chunk,
+                    plot=False,
+                    window=window,
+                    keep_fraction=keep_fraction,
+                    topk_edges_per_node=3,
+                    layout_seed=7
+                )
+                
+                phrases = sorted(set(phrases))
+                all_phrases.extend(phrases)
+                
+                # Try Claude deduplication if API key is available
+                if os.getenv("ANTHROPIC_API_KEY"):
+                    try:
+                        dedup_json = self.deduplicate_keywords_with_claude(phrases)
+                        kw_map = self.json_to_dict(dedup_json)
+                        if kw_map:
+                            partial_maps.append(kw_map)
+                    except Exception as e:
+                        print(f"Claude dedup failed for chunk {i+1}: {e}")
+                        # Create simple mapping for this chunk's phrases
+                        simple_map = {phrase: [phrase] for phrase in phrases}
+                        partial_maps.append(simple_map)
+                else:
+                    # Create simple mapping without deduplication
+                    simple_map = {phrase: [phrase] for phrase in phrases}
+                    partial_maps.append(simple_map)
+                    
+            except Exception as e:
+                print(f"Error processing chunk {i+1}: {e}")
+                continue
+        
+        # Merge results
+        if partial_maps:
+            keyword_map = self._merge_keyword_maps(partial_maps)
+        else:
+            # Fallback: create simple mapping from all phrases
+            unique_phrases = sorted(set(all_phrases))
+            keyword_map = {phrase: [phrase] for phrase in unique_phrases}
+        
+        # Build co-occurrence graph
+        nodes = list(keyword_map.keys())
+        adj = self.create_edges(nodes)
+        
+        # Store results
+        self.keyword_map = keyword_map
+        self.adjacency = adj
+        
+        return keyword_map, adj
+
     def run_parallel_pipeline(
         self,
         *,
@@ -766,9 +838,27 @@ class TextAnalyzer:
         if not chunks:
             return {}, {}
 
-        # --- init Ray
-        if not ray.is_initialized():
-            ray.init(ignore_reinit_error=True, num_cpus=num_cpus or os.cpu_count())
+        # --- check Ray availability
+        try:
+            if not ray.is_initialized():
+                print("Ray not initialized, attempting to initialize...")
+                # Initialize Ray with limited resources to avoid hanging
+                ray.init(
+                    ignore_reinit_error=True, 
+                    num_cpus=min(num_cpus or os.cpu_count(), 4),  # Limit CPU usage
+                    object_store_memory=1000000000,  # 1GB limit
+                    _temp_dir="/tmp/ray"
+                )
+                print("Ray initialized successfully")
+            else:
+                print("Ray already initialized, proceeding with parallel processing")
+        except Exception as e:
+            print(f"Ray initialization failed: {e}")
+            # Fall back to sequential processing
+            return self._run_sequential_pipeline(
+                chunks, window=window, keep_fraction=keep_fraction, 
+                final_global_dedup=final_global_dedup
+            )
 
         # --- map: submit one task per chunk (runs concurrently)
         # Create ray remote function that uses class methods
@@ -782,12 +872,26 @@ class TextAnalyzer:
             layout_seed: int = 7,
             dedup_per_chunk: bool = True
         ) -> Dict:
+            import os
+            from dotenv import load_dotenv
+            load_dotenv()  # Load environment in remote process
+            
             try:
                 # Create a temporary analyzer instance for this chunk
                 temp_analyzer = TextAnalyzer.__new__(TextAnalyzer)  # Create without calling __init__
-                temp_analyzer.setup_environment()
-            except Exception:
-                pass
+                temp_analyzer.file_path = None
+                temp_analyzer.text = None
+                temp_analyzer.keyword_map = {}
+                temp_analyzer.adjacency = {}
+                
+                # Setup environment (downloads NLTK data if needed)
+                try:
+                    temp_analyzer.setup_environment()
+                except Exception as setup_err:
+                    print(f"Setup environment warning: {setup_err}")
+                    
+            except Exception as init_err:
+                return {"phrases": [], "keyword_map": {}, "err": f"init_failed: {init_err}"}
 
             try:
                 _G, phrases = temp_analyzer.extract_key_phrases(
@@ -805,24 +909,62 @@ class TextAnalyzer:
             if not dedup_per_chunk:
                 return {"phrases": phrases, "keyword_map": {}, "err": None}
 
+            # Check if API key is available before attempting Claude call
+            if not os.getenv("ANTHROPIC_API_KEY"):
+                print("Warning: ANTHROPIC_API_KEY not found, skipping deduplication")
+                return {"phrases": phrases, "keyword_map": {}, "err": None}
+
             try:
                 dedup_json = temp_analyzer.deduplicate_keywords_with_claude(phrases)
                 kw_map = temp_analyzer.json_to_dict(dedup_json)
                 return {"phrases": [], "keyword_map": kw_map, "err": None}
             except Exception as e:
-                return {"phrases": phrases, "keyword_map": {}, "err": f"chunk_dedup_failed: {e}"}
+                print(f"Claude dedup failed: {e}")
+                # Fallback: return phrases without deduplication
+                return {"phrases": phrases, "keyword_map": {}, "err": None}
 
-        futures = [
-            process_chunk_remote.options(name=f"process_chunk[{i}]").remote(
-                c,
-                window=window,
-                keep_fraction=keep_fraction,
-                dedup_per_chunk=True,
+        try:
+            futures = [
+                process_chunk_remote.options(name=f"process_chunk[{i}]").remote(
+                    c,
+                    window=window,
+                    keep_fraction=keep_fraction,
+                    dedup_per_chunk=True,
+                )
+                for i, c in enumerate(chunks)
+            ]
+
+            # Add timeout to ray.get to prevent hanging
+            import time
+            start_time = time.time()
+            timeout = 300  # 5 minutes timeout
+            
+            results = []
+            while len(results) < len(futures) and (time.time() - start_time) < timeout:
+                ready, not_ready = ray.wait(futures, num_returns=len(futures), timeout=10.0)
+                if ready:
+                    results = ray.get(ready)
+                    break
+                else:
+                    print(f"Waiting for Ray tasks... {len(not_ready)} remaining")
+            
+            if len(results) < len(futures):
+                print("Ray processing timed out, falling back to sequential processing")
+                # Cancel remaining tasks
+                for future in futures:
+                    ray.cancel(future)
+                
+                return self._run_sequential_pipeline(
+                    chunks, window=window, keep_fraction=keep_fraction, 
+                    final_global_dedup=final_global_dedup
+                )
+                
+        except Exception as ray_err:
+            print(f"Ray processing failed: {ray_err}")
+            return self._run_sequential_pipeline(
+                chunks, window=window, keep_fraction=keep_fraction, 
+                final_global_dedup=final_global_dedup
             )
-            for i, c in enumerate(chunks)
-        ]
-
-        results = ray.get(futures)
 
         # --- collect errors (non-fatal)
         errs = [r["err"] for r in results if r.get("err")]
@@ -869,10 +1011,11 @@ class TextAnalyzer:
         keep_fraction: float = 0.33,
         final_global_dedup: bool = False,
         plot_graph: bool = True,
+        use_ray: bool = True,  # New parameter to control Ray usage
         **plot_kwargs
     ):
         """
-        Main analysis method that runs the complete pipeline with Ray parallelization.
+        Main analysis method that runs the complete pipeline with optional Ray parallelization.
         
         Args:
             target_chars: Target characters per chunk
@@ -884,21 +1027,51 @@ class TextAnalyzer:
             keep_fraction: Fraction of keywords to keep
             final_global_dedup: Whether to perform final global deduplication
             plot_graph: Whether to plot the resulting graph
+            use_ray: Whether to use Ray for parallelization
             **plot_kwargs: Additional arguments for plotting
         
         Returns:
             tuple: (keyword_map, adjacency_dict)
         """
-        keyword_map, adj = self.run_parallel_pipeline(
-            target_chars=target_chars,
-            hard_max_chars=hard_max_chars,
-            overlap_sentences=overlap_sentences,
-            max_chunks=max_chunks,
-            num_cpus=num_cpus,
-            window=window,
-            keep_fraction=keep_fraction,
-            final_global_dedup=final_global_dedup,
-        )
+        # Try Ray first, fall back to sequential if it fails
+        if use_ray:
+            try:
+                print("Attempting Ray parallelization...")
+                keyword_map, adj = self.run_parallel_pipeline(
+                    target_chars=target_chars,
+                    hard_max_chars=hard_max_chars,
+                    overlap_sentences=overlap_sentences,
+                    max_chunks=max_chunks,
+                    num_cpus=num_cpus,
+                    window=window,
+                    keep_fraction=keep_fraction,
+                    final_global_dedup=final_global_dedup,
+                )
+            except Exception as ray_error:
+                print(f"Ray processing failed: {ray_error}")
+                print("Falling back to sequential processing...")
+                chunks = self.chunk_text_sliding_by_sentences(
+                    target_chars=target_chars,
+                    hard_max_chars=hard_max_chars,
+                    overlap_sentences=overlap_sentences,
+                    max_chunks=max_chunks,
+                )
+                keyword_map, adj = self._run_sequential_pipeline(
+                    chunks, window=window, keep_fraction=keep_fraction, 
+                    final_global_dedup=final_global_dedup
+                )
+        else:
+            print("Using sequential processing...")
+            chunks = self.chunk_text_sliding_by_sentences(
+                target_chars=target_chars,
+                hard_max_chars=hard_max_chars,
+                overlap_sentences=overlap_sentences,
+                max_chunks=max_chunks,
+            )
+            keyword_map, adj = self._run_sequential_pipeline(
+                chunks, window=window, keep_fraction=keep_fraction, 
+                final_global_dedup=final_global_dedup
+            )
 
         print(json.dumps(keyword_map, indent=2)[:2000])
 

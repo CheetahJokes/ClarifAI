@@ -148,21 +148,42 @@ def upload_file():
                     analysis_status['progress'] = 20
                     log_message("Creating TextAnalyzer...")
                     
-                    current_analyzer = TextAnalyzer(temp_path)
-                    log_message("TextAnalyzer created successfully")
+                    # Add timeout for analyzer creation
+                    import signal
+                    def timeout_handler(signum, frame):
+                        raise TimeoutError("TextAnalyzer creation timed out")
+                    
+                    signal.signal(signal.SIGALRM, timeout_handler)
+                    signal.alarm(30)  # 30 second timeout for creation
+                    
+                    try:
+                        current_analyzer = TextAnalyzer(temp_path)
+                        signal.alarm(0)  # Cancel timeout
+                        log_message("TextAnalyzer created successfully")
+                    except TimeoutError:
+                        signal.alarm(0)
+                        raise Exception("TextAnalyzer creation timed out after 30 seconds")
                     
                     analysis_status['message'] = 'Running text analysis...'
                     analysis_status['progress'] = 30
                     log_message("Starting analysis...")
                     
-                    keyword_map, adj = current_analyzer.analyze(
-                        target_chars=target_chars,
-                        max_chunks=max_chunks,
-                        window=window,
-                        keep_fraction=keep_fraction,
-                        final_global_dedup=False,
-                        plot_graph=False  # Don't show plot, we'll generate it for web
-                    )
+                    # Set timeout for analysis
+                    signal.alarm(600)  # 10 minute timeout for analysis
+                    
+                    try:
+                        keyword_map, adj = current_analyzer.analyze(
+                            target_chars=target_chars,
+                            max_chunks=max_chunks,
+                            window=window,
+                            keep_fraction=keep_fraction,
+                            final_global_dedup=False,
+                            plot_graph=False  # Don't show plot, we'll generate it for web
+                        )
+                        signal.alarm(0)  # Cancel timeout
+                    except TimeoutError:
+                        signal.alarm(0)
+                        raise Exception("Analysis timed out after 10 minutes")
                     
                     log_message(f"Analysis completed! Keywords: {len(keyword_map)}, Edges: {sum(len(neighbors) for neighbors in adj.values())}")
                     
@@ -179,14 +200,30 @@ def upload_file():
                     analysis_status['error'] = error_msg
                     analysis_status['progress'] = 0
                 finally:
+                    # Ensure signal handler is reset
+                    try:
+                        signal.alarm(0)
+                        signal.signal(signal.SIGALRM, signal.SIG_DFL)
+                    except:
+                        pass
+                        
                     # Clean up temp file
                     try:
                         if os.path.exists(temp_path):
                             os.unlink(temp_path)
                             log_message("Temp file cleaned up")
                         if current_analyzer:
-                            current_analyzer.shutdown_ray()
-                            log_message("Ray shutdown completed")
+                            # Force Ray shutdown in a separate thread to avoid blocking
+                            def shutdown_ray_async():
+                                try:
+                                    current_analyzer.shutdown_ray()
+                                    log_message("Ray shutdown completed")
+                                except Exception as shutdown_err:
+                                    log_message(f"Ray shutdown error: {shutdown_err}")
+                            
+                            shutdown_thread = threading.Thread(target=shutdown_ray_async, daemon=True)
+                            shutdown_thread.start()
+                            
                     except Exception as cleanup_error:
                         log_message(f"Cleanup error: {cleanup_error}")
             

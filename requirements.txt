@@ -6,3 +6,4 @@ nltk==3.8.1
 anthropic==0.3.11
 python-dotenv==1.0.0
 ray==2.6.3
+neo4j==5.14.0
